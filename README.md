@@ -19,7 +19,7 @@ This repository contains a Python prototype for a multi-agent product data quali
 
 - `product_quality_supervisor/models.py` – core data models for products, findings, and reports
 - `product_quality_supervisor/demo_data.py` – synthetic catalog generation and policy corpus
-- `product_quality_supervisor/agents.py` – specialized agents and orchestration logic
+- `product_quality_supervisor/agents/` – focused profiling, taxonomy, attribute validation, duplicate detection, policy retrieval, investigation, correction, validation, human-review, and supervisor modules
 - `product_quality_supervisor/workflow.py` – batch workflow and exports
 - `product_quality_supervisor/main.py` – command-line runner
 - `tests/test_workflow.py` – regression tests for the demo flow
