@@ -44,6 +44,22 @@ Run the API server:
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+## Deploy to Vercel
+
+Vercel detects the FastAPI application in `app/main.py` automatically. Deploy
+from the repository root with the Vercel CLI:
+
+```bash
+npx vercel
+```
+
+Use `npx vercel --prod` to deploy to production. Review and link the project
+when prompted by the CLI.
+
+Vercel functions use temporary SQLite storage at `/tmp/review_store.db`. Reviews
+and job records are therefore not durable across function restarts; use a
+managed database for persistent production data.
+
 Call the health endpoint:
 
 ```bash

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "review_store.db"
+DB_PATH = (
+    Path("/tmp/review_store.db")
+    if os.getenv("VERCEL")
+    else Path(__file__).resolve().parent.parent / "data" / "review_store.db"
+)
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
