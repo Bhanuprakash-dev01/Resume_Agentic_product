@@ -10,6 +10,9 @@ from .workflow import ProductQualityWorkflow
 
 
 def run_demo(batch_size: int = 720, output_path: str | None = None) -> dict:
+    if not 1 <= batch_size <= 1000:
+        raise ValueError("batch_size must be between 1 and 1000")
+
     products = generate_demo_products(batch_size)
     workflow = ProductQualityWorkflow(products)
     reports = workflow.analyze_batch()

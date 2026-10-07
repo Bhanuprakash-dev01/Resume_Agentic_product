@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 from .agents import SupervisorAgent
 from .demo_data import POLICY_DOCS, generate_demo_products
 from .models import ProductRecord, QualityReport
+from .observability import record_product_report, trace_span
 
 
 class ProductQualityWorkflow:
@@ -14,24 +15,35 @@ class ProductQualityWorkflow:
         self.supervisor = SupervisorAgent(POLICY_DOCS)
 
     def analyze_single_product(self, product: ProductRecord) -> QualityReport:
-        report = self.supervisor.run(product, self.batch)
-        quality_dimensions = report["quality_dimensions"]
-        overall_score = int(round(sum(quality_dimensions.values()) / max(len(quality_dimensions), 1)))
-        issues = report["issues"]
-        corrections = report["proposed_corrections"]
-        requires_human_review = bool(report["requires_human_review"])
-        return QualityReport(
+        with trace_span(
+            "Product Analysis",
+            span_type="workflow",
             product_id=product.sku,
-            overall_quality_score=overall_score,
-            quality_dimensions={k: int(v) for k, v in quality_dimensions.items()},
-            issues=issues,
-            proposed_corrections=corrections,
-            confidence=float(report["confidence"]),
-            requires_human_review=requires_human_review,
-            decision=report["decision"],
-            investigation_summary=report["investigation_summary"],
-            evidence=report["evidence"],
-        )
+            sku=product.sku,
+            input_summary={"category": product.category},
+        ) as analysis_span:
+            report_data = self.supervisor.run(product, self.batch)
+            quality_dimensions = report_data["quality_dimensions"]
+            overall_score = int(round(sum(quality_dimensions.values()) / max(len(quality_dimensions), 1)))
+            report = QualityReport(
+                product_id=product.sku,
+                overall_quality_score=overall_score,
+                quality_dimensions={k: int(v) for k, v in quality_dimensions.items()},
+                issues=report_data["issues"],
+                proposed_corrections=report_data["proposed_corrections"],
+                confidence=float(report_data["confidence"]),
+                requires_human_review=bool(report_data["requires_human_review"]),
+                decision=report_data["decision"],
+                investigation_summary=report_data["investigation_summary"],
+                evidence=report_data["evidence"],
+            )
+            record_product_report(product, report)
+            analysis_span["summary"] = {
+                "overall_quality_score": report.overall_quality_score,
+                "issue_count": len(report.issues),
+                "decision": report.decision,
+            }
+            return report
 
     def analyze_batch(self) -> List[QualityReport]:
         return [self.analyze_single_product(product) for product in self.batch]
@@ -58,6 +70,10 @@ class ProductQualityWorkflow:
         payload = {
             "reports": [report.to_dict() for report in reports],
         }
-        with open(file_path, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2)
+        serialized = json.dumps(payload, indent=2)
+        try:
+            with open(file_path, "x", encoding="utf-8") as handle:
+                handle.write(serialized)
+        except FileExistsError as exc:
+            raise FileExistsError(f"Refusing to overwrite existing report file: {file_path}") from exc
         return file_path

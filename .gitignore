@@ -1,1 +1,4 @@
 .vercel
+/data/observability.db
+/data/observability.db-shm
+/data/observability.db-wal

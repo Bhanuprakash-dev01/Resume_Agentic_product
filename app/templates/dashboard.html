@@ -13,6 +13,12 @@
       .card h3 { margin: 0 0 0.5rem; color: #475569; font-size: 0.8rem; text-transform: uppercase; }
       .card strong { font-size: 2rem; }
       .section { background: white; border-radius: 12px; padding: 1rem 1.2rem; box-shadow: 0 3px 10px rgba(15,23,42,0.08); }
+      .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 1rem 0; }
+      .form-grid label { display: grid; gap: 0.35rem; color: #475569; font-size: 0.9rem; }
+      .form-grid input, .form-grid textarea { box-sizing: border-box; width: 100%; padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+      .form-grid textarea { min-height: 5rem; resize: vertical; }
+      .form-status { margin-top: 1rem; }
+      .result { max-height: 30rem; overflow: auto; padding: 1rem; background: #f8fafc; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
       table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
       th, td { padding: 0.7rem 0.8rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
       button { background: #2563eb; color: white; border: none; border-radius: 8px; padding: 0.6rem 1rem; cursor: pointer; }
@@ -26,6 +32,7 @@
   <body>
     <div class="header">
       <h1>Product Quality Supervisor Dashboard</h1>
+      <a href="/observability" style="color: #bfdbfe;">Product-quality observability</a>
     </div>
     <div class="container">
       <div class="cards" id="summaryCards"></div>
@@ -44,6 +51,53 @@
           </thead>
           <tbody id="reviewRows"></tbody>
         </table>
+      </div>
+
+      <div class="section" style="margin-top: 1.5rem;">
+        <h2>Analyze a product</h2>
+        <form id="analyzeForm">
+          <div class="form-grid">
+            <label>SKU *
+              <input name="sku" required />
+            </label>
+            <label>Title *
+              <input name="title" required />
+            </label>
+            <label>Category *
+              <input name="category" required />
+            </label>
+            <label>Brand *
+              <input name="brand" required />
+            </label>
+            <label>Color
+              <input name="color" />
+            </label>
+            <label>Storage
+              <input name="storage" />
+            </label>
+            <label>Price
+              <input name="price" type="number" step="any" />
+            </label>
+            <label>GTIN
+              <input name="gtin" />
+            </label>
+            <label>Model
+              <input name="model" />
+            </label>
+            <label>Weight
+              <input name="weight" />
+            </label>
+            <label>Dimensions
+              <input name="dimensions" />
+            </label>
+            <label style="grid-column: 1 / -1;">Description
+              <textarea name="description"></textarea>
+            </label>
+          </div>
+          <button id="analyzeBtn" type="submit">Analyze product</button>
+          <p id="analysisStatus" class="form-status" role="status" aria-live="polite"></p>
+        </form>
+        <pre id="analysisResult" class="result" hidden></pre>
       </div>
 
       <div class="section" style="margin-top: 1.5rem;">
@@ -96,6 +150,48 @@
         const payload = await response.json();
         document.getElementById('jobStatus').innerHTML = `Job queued: <strong>${payload.job_id}</strong> (${payload.status})`;
         await loadDashboard();
+      });
+
+      document.getElementById('analyzeForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const button = document.getElementById('analyzeBtn');
+        const status = document.getElementById('analysisStatus');
+        const result = document.getElementById('analysisResult');
+        const formValues = Object.fromEntries(new FormData(form).entries());
+        const payload = {
+          ...formValues,
+          price: formValues.price === '' ? null : Number(formValues.price),
+          color: formValues.color || null,
+          storage: formValues.storage || null,
+          model: formValues.model || null,
+          gtin: formValues.gtin || null,
+          weight: formValues.weight || null,
+          dimensions: formValues.dimensions || null
+        };
+
+        button.disabled = true;
+        status.textContent = 'Analyzing product…';
+        result.hidden = true;
+        try {
+          const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const report = await response.json();
+          if (!response.ok) {
+            const detail = typeof report.detail === 'string' ? report.detail : JSON.stringify(report.detail || report);
+            throw new Error(detail);
+          }
+          result.textContent = JSON.stringify(report, null, 2);
+          result.hidden = false;
+          status.textContent = `Analysis complete: ${report.decision}`;
+        } catch (error) {
+          status.textContent = `Analysis failed: ${error.message}`;
+        } finally {
+          button.disabled = false;
+        }
       });
 
       loadDashboard();

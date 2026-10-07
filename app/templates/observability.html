@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Quality Observability</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #f3f6fb; }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      header { background: #111827; color: #fff; padding: 1rem clamp(1rem, 4vw, 3rem); }
+      header h1 { margin: 0 0 .75rem; font-size: 1.35rem; }
+      nav { display: flex; gap: .5rem; flex-wrap: wrap; }
+      nav a { color: #dbeafe; padding: .4rem .65rem; border-radius: .4rem; text-decoration: none; }
+      nav a:hover, nav a.active { background: #263449; color: #fff; }
+      main { max-width: 1440px; margin: auto; padding: 1.5rem clamp(1rem, 4vw, 3rem) 3rem; }
+      h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+      .subtle, .muted { color: #64748b; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: .85rem; margin: 1rem 0 1.5rem; }
+      .card, .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: .75rem; padding: 1rem; box-shadow: 0 2px 6px #0f172a0a; }
+      .card span { display: block; color: #64748b; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+      .card strong { display: block; font-size: 1.55rem; margin-top: .4rem; overflow-wrap: anywhere; }
+      .layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr)); gap: 1rem; }
+      .panel { margin-bottom: 1rem; overflow: auto; }
+      table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+      th, td { padding: .65rem; border-bottom: 1px solid #e8edf4; text-align: left; vertical-align: top; }
+      th { color: #475569; font-size: .75rem; text-transform: uppercase; white-space: nowrap; }
+      td { max-width: 340px; overflow-wrap: anywhere; }
+      a { color: #1d4ed8; }
+      button, input, select { font: inherit; padding: .55rem .65rem; border: 1px solid #cbd5e1; border-radius: .45rem; background: #fff; }
+      button { cursor: pointer; background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+      button:hover { background: #1e40af; }
+      .controls { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .8rem; }
+      .status { font-weight: 700; text-transform: uppercase; }
+      .green { color: #15803d; } .amber { color: #b45309; } .red { color: #b91c1c; }
+      .unavailable { color: #64748b; background: #f8fafc; border: 1px dashed #cbd5e1; padding: .7rem; border-radius: .5rem; margin: .35rem 0; }
+      pre { max-height: 24rem; overflow: auto; background: #0f172a; color: #e2e8f0; border-radius: .5rem; padding: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .waterfall { min-width: 780px; }
+      .span-row { display: grid; grid-template-columns: 210px 1fr; gap: .75rem; align-items: center; min-height: 2.4rem; border-bottom: 1px solid #edf2f7; }
+      .span-label { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .track { position: relative; height: 1.6rem; background: repeating-linear-gradient(90deg, #f8fafc 0, #f8fafc 9.8%, #e2e8f0 10%); }
+      .bar { position: absolute; top: .2rem; min-width: 3px; height: 1.15rem; border-radius: .25rem; background: #3b82f6; cursor: pointer; }
+      .bar.failed { background: #dc2626; }
+      details { margin: .35rem 0; }
+      @media (max-width: 640px) { .span-row { grid-template-columns: 130px 1fr; } th, td { padding: .5rem; } }
+    </style>
+  </head>
+  <body data-view="__OBSERVABILITY_VIEW__" data-trace-id="__TRACE_ID__">
+    <header>
+      <h1>Product Quality Observability</h1>
+      <nav>
+        <a href="/observability" data-page="overview">Overview</a>
+        <a href="/logs" data-page="logs">Logs</a>
+        <a href="/metrics" data-page="metrics">Metrics</a>
+        <a href="/traces" data-page="traces">Traces</a>
+        <a href="/drift" data-page="drift">Drift</a>
+        <a href="/">Product dashboard</a>
+      </nav>
+    </header>
+    <main id="content"><p class="muted">Loading product-quality observability data…</p></main>
+    <script>
+      const view = document.body.dataset.view;
+      const traceId = document.body.dataset.traceId;
+      const root = document.getElementById('content');
+      document.querySelector(`[data-page="${view === 'trace' ? 'traces' : view}"]`)?.classList.add('active');
+
+      async function api(path) {
+        const response = await fetch(path);
+        if (!response.ok) throw new Error(`Observability API returned ${response.status}`);
+        return response.json();
+      }
+      function el(tag, text, cls) {
+        const node = document.createElement(tag);
+        if (text !== undefined && text !== null) node.textContent = text;
+        if (cls) node.className = cls;
+        return node;
+      }
+      function card(label, value) {
+        const node = el('div', undefined, 'card');
+        node.append(el('span', label), el('strong', value ?? '—'));
+        return node;
+      }
+      function cards(entries) {
+        const grid = el('div', undefined, 'cards');
+        for (const [label, value] of entries) grid.append(card(label, value));
+        return grid;
+      }
+      function panel(title) {
+        const node = el('section', undefined, 'panel');
+        node.append(el('h2', title));
+        return node;
+      }
+      function table(headers, rows) {
+        const result = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        headers.forEach(item => headRow.append(el('th', item)));
+        thead.append(headRow);
+        const tbody = document.createElement('tbody');
+        for (const row of rows) {
+          const tr = document.createElement('tr');
+          row.forEach(value => {
+            const td = document.createElement('td');
+            if (value instanceof Node) td.append(value);
+            else td.textContent = value ?? '—';
+            tr.append(td);
+          });
+          tbody.append(tr);
+        }
+        result.append(thead, tbody);
+        return result;
+      }
+      function jsonDetails(value, label = 'Structured data') {
+        const details = document.createElement('details');
+        details.append(el('summary', label));
+        details.append(el('pre', JSON.stringify(value, null, 2)));
+        return details;
+      }
+      function unavailable(capabilities) {
+        const section = panel('Not configured in this application');
+        for (const [name, capability] of Object.entries(capabilities || {})) {
+          if (!capability.available) section.append(el('p', `${name}: ${capability.reason}`, 'unavailable'));
+        }
+        return section;
+      }
+      function traceLink(id) {
+        const link = el('a', id);
+        link.href = `/traces/${encodeURIComponent(id)}`;
+        return link;
+      }
+      function statusClass(status) {
+        return status === 'red' ? 'status red' : status === 'amber' ? 'status amber' : status === 'green' ? 'status green' : 'status muted';
+      }
+      async function renderOverview() {
+        const data = await api('/api/observability/summary');
+        root.replaceChildren(el('p', 'Live measurements from the product analysis workflow and SQLite observability store.', 'subtle'));
+        root.append(cards([
+          ['Requests observed', data.requests.total],
+          ['Request success rate', data.requests.success_rate === null ? '—' : `${(data.requests.success_rate * 100).toFixed(1)}%`],
+          ['Average request latency', data.requests.average_latency_ms === null ? '—' : `${data.requests.average_latency_ms} ms`],
+          ['Products analyzed', data.product_quality.products_analyzed],
+          ['Average quality score', data.product_quality.average_quality_score ?? '—'],
+          ['Quality issues', Object.values(data.product_quality.issues_by_type).reduce((a, b) => a + b, 0)],
+          ['Review escalations', data.product_quality.human_review_count],
+          ['Recorded traces', data.traces]
+        ]));
+        const quality = panel('Product data quality');
+        quality.append(table(
+          ['Issue type', 'Count'],
+          Object.entries(data.product_quality.issues_by_type).map(([name, count]) => [name, count])
+        ));
+        const agents = panel('Executed product-quality agents');
+        agents.append(table(
+          ['Agent', 'Runs', 'Average duration (ms)', 'Failures'],
+          data.agents.map(item => [item.agent_name, item.runs, Number(item.average_duration_ms).toFixed(2), item.failures])
+        ));
+        const recent = panel('Recent traces');
+        const traceData = await api('/api/observability/traces?limit=10');
+        recent.append(table(
+          ['Started', 'Endpoint', 'Status', 'Product', 'Trace'],
+          traceData.items.map(item => [item.started_at, item.endpoint, item.status, item.sku, traceLink(item.trace_id)])
+        ));
+        root.append(quality, agents, recent, unavailable(data.capabilities));
+      }
+      async function renderMetrics() {
+        const data = await api('/api/observability/summary');
+        root.replaceChildren(el('p', 'Only observed values are displayed. Missing integrations are called out explicitly.', 'subtle'));
+        root.append(cards([
+          ['Total requests', data.requests.total],
+          ['Successful requests', data.requests.successful],
+          ['Failed requests', data.requests.failed],
+          ['P50 latency (ms)', data.requests.p50_latency_ms],
+          ['P95 latency (ms)', data.requests.p95_latency_ms],
+          ['P99 latency (ms)', data.requests.p99_latency_ms],
+          ['Products analyzed', data.product_quality.products_analyzed],
+          ['Products with issues', data.product_quality.products_with_issues],
+          ['Average quality score', data.product_quality.average_quality_score],
+          ['Human review required', data.product_quality.human_review_count],
+          ['Observed errors', data.errors],
+          ['Logged workflow events', data.logs]
+        ]));
+        const dimensions = panel('Product quality dimensions');
+        dimensions.append(table(['Dimension', 'Average score'], Object.entries(data.product_quality.average_dimensions).map(([key, value]) => [key, value])));
+        const issueTypes = panel('Product issue distribution');
+        issueTypes.append(table(['Issue type', 'Count'], Object.entries(data.product_quality.issues_by_type).map(([key, value]) => [key, value])));
+        const correctionTypes = panel('Correction proposals');
+        correctionTypes.append(table(['Correction decision', 'Count'], Object.entries(data.product_quality.corrections_by_type).map(([key, value]) => [key, value])));
+        const agents = panel('Agent execution metrics');
+        agents.append(table(['Agent', 'Runs', 'Average duration (ms)', 'Failures'], data.agents.map(item => [item.agent_name, item.runs, Number(item.average_duration_ms).toFixed(2), item.failures])));
+        const approvals = panel('Human review outcomes');
+        approvals.append(table(['Outcome', 'Count'], Object.entries(data.approvals).map(([key, value]) => [key, value])));
+        const guardrails = panel('Guardrail decisions');
+        guardrails.append(table(['Decision', 'Count'], Object.entries(data.guardrails).map(([key, value]) => [key, value])));
+        root.append(dimensions, issueTypes, correctionTypes, agents, approvals, guardrails, unavailable(data.capabilities));
+      }
+      async function renderLogs() {
+        const section = panel('Product-quality event log explorer');
+        const controls = el('div', undefined, 'controls');
+        const search = el('input');
+        search.placeholder = 'Search event, request, trace, or SKU';
+        const sku = el('input');
+        sku.placeholder = 'SKU';
+        const trace = el('input');
+        trace.placeholder = 'Trace ID';
+        const level = document.createElement('select');
+        ['', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].forEach(value => {
+          const option = el('option', value || 'All levels');
+          option.value = value;
+          level.append(option);
+        });
+        const load = el('button', 'Search');
+        const previous = el('button', 'Previous');
+        const next = el('button', 'Next');
+        const exportJson = el('a', 'Export JSON');
+        exportJson.href = '/api/observability/logs/export?format=json';
+        const exportCsv = el('a', 'Export CSV');
+        exportCsv.href = '/api/observability/logs/export?format=csv';
+        controls.append(search, sku, trace, level, load, previous, next, exportJson, exportCsv);
+        const output = document.createElement('div');
+        section.append(controls, output);
+        root.replaceChildren(section);
+        let offset = 0;
+        const refresh = async () => {
+          const params = new URLSearchParams({ limit: '100', offset: String(offset), q: search.value });
+          if (level.value) params.set('level', level.value);
+          if (sku.value) params.set('sku', sku.value);
+          if (trace.value) params.set('trace_id', trace.value);
+          const data = await api(`/api/observability/logs?${params}`);
+          output.replaceChildren(table(
+            ['Timestamp', 'Level', 'Event', 'Message', 'Agent', 'SKU', 'Latency', 'Trace', 'Details'],
+            data.items.map(item => [item.timestamp, item.level, item.event_type, item.message, item.agent_name, item.sku, item.latency_ms === null ? '—' : `${item.latency_ms.toFixed(2)} ms`, item.trace_id ? traceLink(item.trace_id) : '—', jsonDetails(item, 'View')])
+          ));
+          output.prepend(el('p', `${data.total} matching events`, 'muted'));
+        };
+        load.addEventListener('click', () => { offset = 0; refresh(); });
+        previous.addEventListener('click', () => { offset = Math.max(0, offset - 100); refresh(); });
+        next.addEventListener('click', () => { offset += 100; refresh(); });
+        await refresh();
+      }
+      async function renderTraces() {
+        const section = panel('Product-quality request traces');
+        const data = await api('/api/observability/traces?limit=100');
+        section.append(table(
+          ['Started', 'Endpoint', 'Status', 'Duration (ms)', 'SKU', 'Trace ID'],
+          data.items.map(item => [item.started_at, item.endpoint, item.status, item.duration_ms?.toFixed(2), item.sku, traceLink(item.trace_id)])
+        ));
+        root.replaceChildren(section);
+      }
+      async function renderTraceDetail() {
+        const data = await api(`/api/observability/traces/${encodeURIComponent(traceId)}`);
+        root.replaceChildren(el('h2', `Trace ${data.trace_id}`));
+        root.append(el('p', `${data.method} ${data.endpoint} · ${data.status} · ${data.duration_ms?.toFixed(2) ?? '—'} ms · SKU ${data.sku ?? '—'}`, 'subtle'));
+        const section = panel('Executed workflow spans — click a bar to inspect safe span metadata');
+        const waterfall = el('div', undefined, 'waterfall');
+        const starts = data.spans.map(span => new Date(span.start_time).getTime());
+        const ends = data.spans.map(span => span.end_time ? new Date(span.end_time).getTime() : new Date(span.start_time).getTime());
+        const start = Math.min(...starts);
+        const total = Math.max(1, Math.max(...ends) - start);
+        const maximumDuration = Math.max(1, ...data.spans.map(span => span.duration_ms || 0));
+        const detail = el('div');
+        for (const span of data.spans) {
+          const row = el('div', undefined, 'span-row');
+          const label = el('div', `${span.span_name} · ${span.duration_ms?.toFixed(2) ?? '—'} ms`, 'span-label');
+          const track = el('div', undefined, 'track');
+          const bar = el('button', '');
+          bar.type = 'button';
+          bar.className = `bar ${span.status === 'failed' ? 'failed' : ''}`;
+          bar.style.left = `${Math.max(0, (new Date(span.start_time).getTime() - start) / total * 100)}%`;
+          bar.style.width = `${Math.max(1, (span.duration_ms || 0) / maximumDuration * 24)}%`;
+          bar.title = `${span.span_name}: ${span.duration_ms?.toFixed(2) ?? '—'} ms`;
+          bar.addEventListener('click', () => detail.replaceChildren(jsonDetails(span, span.span_name)));
+          track.append(bar);
+          row.append(label, track);
+          waterfall.append(row);
+        }
+        section.append(waterfall, detail);
+        root.append(section);
+      }
+      async function renderDrift() {
+        const data = await api('/api/observability/drift');
+        root.replaceChildren(el('p', `Overall drift: ${data.overall_status.replaceAll('_', ' ')}`, statusClass(data.overall_status)));
+        root.append(el('p', `${data.baseline_definition}; ${data.current_definition}. ${data.sample_count} analyses available.`, 'subtle'));
+        const section = panel('Observed product data and quality drift');
+        section.append(table(
+          ['Feature', 'Method', 'Baseline', 'Current', 'Score / delta', 'Status', 'Samples'],
+          data.metrics.map(item => [item.feature, item.method, item.baseline_distribution ? JSON.stringify(item.baseline_distribution) : item.baseline_value ?? '—', item.current_distribution ? JSON.stringify(item.current_distribution) : item.current_value ?? '—', item.score ?? '—', el('span', item.status.replaceAll('_', ' '), statusClass(item.status)), `${item.baseline_count} / ${item.current_count}`])
+        ));
+        root.append(section, el('p', data.note, 'subtle'));
+        root.append(unavailable({
+          model_prediction_drift: { available: false, reason: 'No model provider or prediction labels are configured.' },
+          concept_drift: { available: false, reason: 'No adjudicated ground-truth outcomes are available.' },
+          prompt_drift: { available: false, reason: 'The workflow has no LLM prompts.' },
+          retrieval_drift: { available: false, reason: 'Policy lookup uses local keyword matching without vectors or retrieval labels.' },
+          infrastructure: { available: false, reason: 'Host-level monitoring is not configured.' }
+        }));
+      }
+      async function render() {
+        try {
+          if (view === 'overview') await renderOverview();
+          else if (view === 'logs') await renderLogs();
+          else if (view === 'metrics') await renderMetrics();
+          else if (view === 'traces') await renderTraces();
+          else if (view === 'trace') await renderTraceDetail();
+          else if (view === 'drift') await renderDrift();
+        } catch (error) {
+          root.replaceChildren(el('p', error.message, 'red'));
+        }
+      }
+      render();
+    </script>
+  </body>
+</html>

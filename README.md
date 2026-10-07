@@ -78,6 +78,33 @@ pytest -q
 - `POST /api/analyze` – analyze a single product payload
 - `POST /api/batch` – run synthetic batch analysis and return summary + sample records
 - `GET /api/demo` – quick demo summary
+- `GET /api/observability/summary` – request, agent, and product-quality measurements
+- `GET /api/observability/logs` – structured event logs with filtering and pagination
+- `GET /api/observability/logs/export?format=json|csv` – export up to 500 recent log records
+- `GET /api/observability/traces` and `/api/observability/traces/{trace_id}` – trace list and span detail
+- `GET /api/observability/drift` – baseline/current product-quality drift metrics
+
+## Product-quality observability
+
+The `/observability`, `/logs`, `/metrics`, `/traces`, and `/drift` pages display data
+from the observability API. Each HTTP request receives generated request and trace
+IDs in the `X-Request-ID` and `X-Trace-ID` response headers. The `data/observability.db`
+SQLite database uses WAL mode, foreign keys, and a busy timeout. Workflow spans,
+request latency/status, product quality scores, issue/correction counts, policy
+retrieval counts, guardrail blocks, and review decisions are persisted without
+storing raw product payloads or exception messages.
+
+Drift compares the older and newer halves of the latest 5,000 recorded product
+analyses. Categorical PSI and quality-score deltas are marked insufficient until
+each cohort has at least 10 records. `cleanup_observability(retention_days=90)` is
+available for an operator-controlled retention cleanup; cleanup is not run
+automatically.
+
+The prototype does not configure LangGraph, an LLM provider, vector search,
+external product tools, authentication, or host-level infrastructure monitoring.
+Those metrics are explicitly shown as unavailable, not reported as fabricated
+zero-activity integrations. Review identity is still a caller-provided label and
+is not authenticated.
 
 Example payload for a single product:
 
@@ -95,6 +122,22 @@ Example payload for a single product:
   "model": "iPhone 15"
 }
 ```
+
+The web dashboard also provides a product form that submits to `POST /api/analyze`
+and displays the returned quality report.
+
+## Request and action guardrails
+
+- The API accepts only product-quality analysis, batch analysis, and review-record
+  requests. Unknown request fields and unsupported review decisions are rejected.
+- Product text and metadata are treated as input data; the workflow does not
+  execute content as instructions or invoke external tools or APIs.
+- Analysis produces reports and suggestions only. It does not update product
+  records; risky recommendations are routed for human review.
+- JSON report exports create new files and refuse to overwrite an existing path.
+- Review submissions record a caller-provided reviewer label. Authentication and
+  authorization are not configured, so this prototype does not verify reviewer
+  identity or treat a stored decision as authenticated approval.
 
 ## Production-style deployment architecture
 
